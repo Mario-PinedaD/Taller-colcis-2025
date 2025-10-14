@@ -1,0 +1,4 @@
+pillow 
+piexif 
+ffmpeg-python 
+openai-whisper
