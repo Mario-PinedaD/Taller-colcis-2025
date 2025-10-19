@@ -2,6 +2,7 @@ import os
 import time
 from PIL import Image, ImageOps
 import ffmpeg
+import piexif
 from tkinter import Tk, filedialog
 from concurrent.futures import ThreadPoolExecutor
 from renombrarRegex import renombrarArchivos
@@ -29,7 +30,7 @@ def convertir_a_resolve(ruta_entrada, ruta_salida):
         )
         .run(overwrite_output=True, quiet=True)
     )
-    print(f"🎯 Convertido a Resolve: {ruta_entrada} → {ruta_salida}")
+    print(f"🎯| : {ruta_entrada} -> {ruta_salida}")
 
 
 def procesar_archivo(ruta_archivo, ruta_destino,
@@ -45,42 +46,60 @@ def procesar_archivo(ruta_archivo, ruta_destino,
     try:
         # ---- Imágenes ----
         if ext in extensiones_img:
-            ruta_nueva = os.path.join(ruta_destino, f"{nombre}_opt.jpeg")
-            if os.path.exists(ruta_nueva):
-                print(f"⏭️ Saltado (ya existe): {ruta_nueva}")
-                return
-            img = Image.open(ruta_archivo)
-            img = ImageOps.exif_transpose(img).convert("RGB")
-            img.save(ruta_nueva, "JPEG", optimize=True, quality=calidad_img)
-            print(f"🖼️ {ruta_archivo} → {ruta_nueva}")
+                    ruta_nueva = os.path.join(ruta_destino, f"{nombre}_opt.jpeg")
+                    if os.path.exists(ruta_nueva):
+                        print(f"⏭️ Saltado (ya existe): {ruta_nueva}")
+                        return
+
+                    img = Image.open(ruta_archivo)
+                    img = ImageOps.exif_transpose(img).convert("RGB")
+
+                    # Intentar obtener EXIF si existe
+                    exif_bytes = img.info.get("exif", None)
+                    if not exif_bytes and ext != ".png":
+                        try:
+                            # piexif puede recuperar datos de archivos JPEG originales
+                            exif_dict = piexif.load(ruta_archivo)
+                            exif_bytes = piexif.dump(exif_dict)
+                        except Exception:
+                            exif_bytes = None
+
+                    # Guardar conservando metadatos si existen
+                    if exif_bytes:
+                        img.save(ruta_nueva, "JPEG", quality=calidad_img,
+                                optimize=True, exif=exif_bytes)
+                        print(f"🖼️| CM: {ruta_archivo} -> {ruta_nueva}") #CM: Con metadatos
+                    else:
+                        img.save(ruta_nueva, "JPEG", quality=calidad_img, optimize=True) #SM: Sin metadatos
+                        print(f"🖼️| SM:{ruta_archivo} -> {ruta_nueva}")
 
         # ---- Videos ----
         elif ext in extensiones_vid:
             ruta_opt = os.path.join(ruta_destino, f"{nombre}_opt.mp4")
-            if not os.path.exists(ruta_opt):
+            ruta_resolve = os.path.join(ruta_destino, f"{nombre}_opt_R.mp4")
+            if not os.path.exists(ruta_resolve):
                 (
                     ffmpeg
                     .input(ruta_archivo)
-                    .output(ruta_opt,
-                            vcodec=codec_video,
-                            crf=crf,
-                            preset=preset,
-                            acodec="aac")
+                    .output(
+                        ruta_opt,
+                        vcodec=codec_video,
+                        crf=crf,
+                        preset=preset,
+                        acodec="aac",
+                        movflags="+faststart+use_metadata_tags",
+                        map_metadata=0  # <-- copia metadatos del original
+                    )
                     .run(overwrite_output=True, quiet=True)
                 )
-                print(f"🎬 {ruta_archivo} → {ruta_opt}")
-            else:
-                print(f"⏭️ Saltado (ya existe): {ruta_opt}")
-
-            # Convertir a formato DaVinci
-            ruta_resolve = os.path.join(ruta_destino, f"{nombre}_opt_R.mp4")
-            if not os.path.exists(ruta_resolve):
+                print(f"🎬| {ruta_archivo} -> {ruta_opt}")
                 convertir_a_resolve(ruta_opt, ruta_resolve)
+                os.remove(ruta_opt)
             else:
-                print(f"⏭️ Saltado (ya existe): {ruta_resolve}")
+                print(f"⏭️| Saltado (ya existe): {ruta_opt}")
 
     except Exception as e:
-        print(f"❌ Error con {ruta_archivo}: {e}")
+        print(f"❌| Error con {ruta_archivo}: {e}")
 
 
 def optimizar_archivos_parallel(carpeta, calidad_img=80,
@@ -108,12 +127,12 @@ def optimizar_archivos_parallel(carpeta, calidad_img=80,
             ))
 
     num_threads = max(1, os.cpu_count() // 2)
-    print(f"🔧 Usando {num_threads} hilos de trabajo…\n")
+    print(f"🔧| Usando {num_threads} hilos de trabajo…\n")
 
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         executor.map(lambda args: procesar_archivo(*args), tareas)
 
-    print(f"\n🚀 Optimización completada. Carpeta generada: {carpeta_opt}")
+    print(f"\n🚀| Optimización completada. Carpeta generada: {carpeta_opt}")
 
 
 if __name__ == "__main__":
