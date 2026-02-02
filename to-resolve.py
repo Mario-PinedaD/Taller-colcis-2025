@@ -25,6 +25,7 @@ def convertir_videos_en_carpeta(carpeta):
     """
     Recorre recursivamente una carpeta y convierte todos los videos encontrados.
     Los nuevos archivos se guardan en la misma ubicación con sufijo '_R'.
+    Evita volver a convertir archivos que ya fueron procesados.
     """
     extensiones_vid = (".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv", ".webm")
 
@@ -33,18 +34,28 @@ def convertir_videos_en_carpeta(carpeta):
     for raiz, _, archivos in os.walk(carpeta):
         for archivo in archivos:
             nombre, ext = os.path.splitext(archivo)
-            if ext.lower() in extensiones_vid:
-                ruta_entrada = os.path.join(raiz, archivo)
-                ruta_salida = os.path.join(raiz, f"{nombre}_R.mp4")
 
-                if os.path.exists(ruta_salida):
-                    print(f"⏭️ Saltado (ya existe): {ruta_salida}")
-                    continue
+            # Saltar si no es video
+            if ext.lower() not in extensiones_vid:
+                continue
 
-                try:
-                    convertir_a_resolve(ruta_entrada, ruta_salida)
-                except Exception as e:
-                    print(f"❌ Error al convertir {archivo}: {e}")
+            # Saltar si ya fue convertido (tiene sufijo "_R")
+            if nombre.endswith("_R"):
+                print(f"⏭️ Saltado (ya es formato Resolve): {archivo}")
+                continue
+
+            ruta_entrada = os.path.join(raiz, archivo)
+            ruta_salida = os.path.join(raiz, f"{nombre}_R.mp4")
+
+            # Saltar si el archivo de salida ya existe
+            if os.path.exists(ruta_salida):
+                print(f"⏭️ Saltado (ya existe): {ruta_salida}")
+                continue
+
+            try:
+                convertir_a_resolve(ruta_entrada, ruta_salida)
+            except Exception as e:
+                print(f"❌ Error al convertir {archivo}: {e}")
 
     print("\n✅ Conversión completa. Todos los videos compatibles con DaVinci Resolve están listos.")
 
